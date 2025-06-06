@@ -85,8 +85,16 @@ class OCRProcessor:
 
         return preprocessed_path
 
-    def process_image(self, image_path: str, format_type: str = "markdown", preprocess: bool = True, 
-                      custom_prompt: str = None, language: str = "en") -> str:
+    def process_image(
+        self,
+        image_path: str,
+        format_type: str = "markdown",
+        preprocess: bool = True,
+        custom_prompt: str = None,
+        language: str = "en",
+        output_file: str = None,
+        allow_keyboard_stop: bool = False,
+    ) -> str:
         """
         Process an image (or PDF) and extract text in the specified format
 
@@ -96,6 +104,8 @@ class OCRProcessor:
             preprocess: Whether to apply image preprocessing
             custom_prompt: If provided, this prompt overrides the default based on format_type
             language: Language code to apply language specific OCR preprocessing
+            output_file: If provided, write the OCR result to this file using UTF-8 encoding
+            allow_keyboard_stop: If True, stop PDF processing gracefully on KeyboardInterrupt
         """
         try:
             # If the input is a PDF, process all pages
@@ -104,93 +114,93 @@ class OCRProcessor:
                 print("No. of pages in the PDF", len(image_pages))
                 responses = []
                 for idx, page_file in enumerate(image_pages):
-                    # Process each page with preprocessing if enabled
-                    if preprocess:
-                        preprocessed_path = self._preprocess_image(page_file, language)
-                    else:
-                        preprocessed_path = page_file
+                    try:
+                        if preprocess:
+                            preprocessed_path = self._preprocess_image(page_file, language)
+                        else:
+                            preprocessed_path = page_file
 
-                    image_base64 = self._encode_image(preprocessed_path)
+                        image_base64 = self._encode_image(preprocessed_path)
 
-                    if custom_prompt and custom_prompt.strip():
-                        prompt = custom_prompt
-                        print("Using custom prompt:", prompt)  # Debug print
-                    else:
-                        prompts = {
-                            "markdown": f"""Extract all text content from this image in {language} **exactly as it appears**, without modification, summarization, or omission.
-                                Format the output in markdown:
-                                - Use headers (#, ##, ###) **only if they appear in the image**
-                                - Preserve original lists (-, *, numbered lists) as they are
-                                - Maintain all text formatting (bold, italics, underlines) exactly as seen
-                                - **Do not add, interpret, or restructure any content**
-                            """,
-                            "text": f"""Extract all visible text from this image in {language} **without any changes**.
-                                - **Do not summarize, paraphrase, or infer missing text.**
-                                - Retain all spacing, punctuation, and formatting exactly as in the image.
-                                - If text is unclear or partially visible, extract as much as possible without guessing.
-                                - **Include all text, even if it seems irrelevant or repeated.** 
+                        if custom_prompt and custom_prompt.strip():
+                            prompt = custom_prompt
+                            print("Using custom prompt:", prompt)
+                        else:
+                            prompts = {
+                                "markdown": f"""Extract all text content from this image in {language} **exactly as it appears**, without modification, summarization, or omission.
+                                    Format the output in markdown:
+                                    - Use headers (#, ##, ###) **only if they appear in the image**
+                                    - Preserve original lists (-, *, numbered lists) as they are
+                                    - Maintain all text formatting (bold, italics, underlines) exactly as seen
+                                    - **Do not add, interpret, or restructure any content**
                                 """,
+                                "text": f"""Extract all visible text from this image in {language} **without any changes**.
+                                    - **Do not summarize, paraphrase, or infer missing text.**
+                                    - Retain all spacing, punctuation, and formatting exactly as in the image.
+                                    - If text is unclear or partially visible, extract as much as possible without guessing.
+                                    - **Include all text, even if it seems irrelevant or repeated.**
+                                    """,
 
+                                "json": f"""Extract all text from this image in {language} and format it as JSON, **strictly preserving** the structure.
+                                    - **Do not summarize, add, or modify any text.**
+                                    - Maintain hierarchical sections and subsections as they appear.
+                                    - Use keys that reflect the document's actual structure (e.g., "title", "body", "footer").
+                                    - Include all text, even if fragmented, blurry, or unclear.
+                                    """,
 
-                           "json": f"""Extract all text from this image in {language} and format it as JSON, **strictly preserving** the structure.
-                                - **Do not summarize, add, or modify any text.**
-                                - Maintain hierarchical sections and subsections as they appear.
-                                - Use keys that reflect the document's actual structure (e.g., "title", "body", "footer").
-                                - Include all text, even if fragmented, blurry, or unclear.
-                                """,
+                                "structured": f"""Extract all text from this image in {language}, **ensuring complete structural accuracy**:
+                                    - Identify and format tables **without altering content**.
+                                    - Preserve list structures (bulleted, numbered) **exactly as shown**.
+                                    - Maintain all section headings, indents, and alignments.
+                                    - **Do not add, infer, or restructure the content in any way.**
+                                    """,
 
+                                "key_value": f"""Extract all key-value pairs from this image in {language} **exactly as they appear**:
+                                    - Identify and extract labels and their corresponding values without modification.
+                                    - Maintain the exact wording, punctuation, and order.
+                                    - Format each pair as 'key: value' **only if clearly structured that way in the image**.
+                                    - **Do not infer missing values or add any extra text.**
+                                    """,
 
-                            "structured": f"""Extract all text from this image in {language}, **ensuring complete structural accuracy**:
-                                - Identify and format tables **without altering content**.
-                                - Preserve list structures (bulleted, numbered) **exactly as shown**.
-                                - Maintain all section headings, indents, and alignments.
-                                - **Do not add, infer, or restructure the content in any way.**
-                                """,
+                                "table": f"""Extract all tabular data from this image in {language} **exactly as it appears**, without modification, summarization, or omission.
+                                    - **Preserve the table structure** (rows, columns, headers) as closely as possible.
+                                    - **Do not add missing values or infer content**—if a cell is empty, leave it empty.
+                                    - Maintain all numerical, textual, and special character formatting.
+                                    - If the table contains merged cells, indicate them clearly without altering their meaning.
+                                    - Output the table in a structured format such as Markdown, CSV, or JSON, based on the intended use.
+                                    """,
+                            }
+                            prompt = prompts.get(format_type, prompts["text"])
+                            print("Using default prompt:", prompt)
 
-
-                           "key_value": f"""Extract all key-value pairs from this image in {language} **exactly as they appear**:
-                                - Identify and extract labels and their corresponding values without modification.
-                                - Maintain the exact wording, punctuation, and order.
-                                - Format each pair as 'key: value' **only if clearly structured that way in the image**.
-                                - **Do not infer missing values or add any extra text.**
-                                """,
-
-                            "table": f"""Extract all tabular data from this image in {language} **exactly as it appears**, without modification, summarization, or omission.
-                                - **Preserve the table structure** (rows, columns, headers) as closely as possible.
-                                - **Do not add missing values or infer content**—if a cell is empty, leave it empty.
-                                - Maintain all numerical, textual, and special character formatting.
-                                - If the table contains merged cells, indicate them clearly without altering their meaning.
-                                - Output the table in a structured format such as Markdown, CSV, or JSON, based on the intended use.
-                                """,
-
-
+                        payload = {
+                            "model": self.model_name,
+                            "prompt": prompt,
+                            "stream": False,
+                            "images": [image_base64]
                         }
-                        prompt = prompts.get(format_type, prompts["text"])
-                        print("Using default prompt:", prompt)  # Debug print
 
-                    # Prepare the request payload
-                    payload = {
-                        "model": self.model_name,
-                        "prompt": prompt,
-                        "stream": False,
-                        "images": [image_base64]
-                    }
+                        response = requests.post(self.base_url, json=payload)
+                        response.raise_for_status()
+                        res = response.json().get("response", "")
+                        print("Page No. Processed", idx)
+                        responses.append(f"Page {idx + 1}:\n{res}")
 
-                    # Make the API call to Ollama
-                    response = requests.post(self.base_url, json=payload)
-                    response.raise_for_status()
-                    res = response.json().get("response", "")
-                    print("Page No. Processed", idx)
-                    # Prefix result with page number
-                    responses.append(f"Page {idx + 1}:\n{res}")
-
-                    # Clean up temporary files
-                    if preprocess and preprocessed_path.endswith('_preprocessed.jpg'):
-                        os.remove(preprocessed_path)
-                    if page_file.endswith('.png'):
-                        os.remove(page_file)
+                        if preprocess and preprocessed_path.endswith('_preprocessed.jpg'):
+                            os.remove(preprocessed_path)
+                        if page_file.endswith('.png'):
+                            os.remove(page_file)
+                    except KeyboardInterrupt:
+                        if allow_keyboard_stop:
+                            print("Stop signal received. Returning partial result...")
+                            break
+                        else:
+                            raise
 
                 final_result = "\n".join(responses)
+                if output_file:
+                    with open(output_file, "w", encoding="utf-8") as f:
+                        f.write(final_result)
                 if format_type == "json":
                     try:
                         json_data = json.loads(final_result)
@@ -274,6 +284,10 @@ class OCRProcessor:
             response.raise_for_status()
 
             result = response.json().get("response", "")
+
+            if output_file:
+                with open(output_file, "w", encoding="utf-8") as f:
+                    f.write(result)
 
             if format_type == "json":
                 try:

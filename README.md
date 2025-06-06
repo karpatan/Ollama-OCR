@@ -68,7 +68,9 @@ result = ocr.process_image(
     image_path="path/to/your/image.png", # path to your pdf files "path/to/your/file.pdf"
     format_type="markdown",  # Options: markdown, text, json, structured, key_value
     custom_prompt="Extract all text, focusing on dates and names.", # Optional custom prompt
-    language="English" # Specify the language of the text (New! 🆕)
+    language="English", # Specify the language of the text (New! 🆕)
+    output_file="ocr_result.md",  # Save result to this markdown file
+    allow_keyboard_stop=True  # Stop gracefully with Ctrl-C when processing PDFs
 )
 print(result)
 ```
